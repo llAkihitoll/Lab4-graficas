@@ -17,6 +17,7 @@ public:
 
     void renderBuffer(SDL_Renderer* renderer, SDL_Texture* texture);
     bool saveBMP(const char* path) const;
+    bool savePNG(const char* path) const;
 
     int width() const { return w; }
     int height() const { return h; }

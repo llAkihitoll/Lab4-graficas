@@ -124,7 +124,7 @@ int render(Framebuffer& fb, Color baseColor) {
 
 int main(int argc, char* argv[]) {
     // Uso: render_obj [modelo.obj] [--screenshot]
-    // Con --screenshot guarda el primer frame en render.bmp y termina.
+    // Con --screenshot guarda el primer frame en render.png y termina.
     const char* modelPath = "NaveEspacial.obj";
     bool screenshotAndExit = false;
     for (int i = 1; i < argc; ++i) {
@@ -166,7 +166,7 @@ int main(int argc, char* argv[]) {
             if (event.type == SDL_QUIT) running = false;
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) running = false;
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_p) {
-                if (fb.saveBMP("render.bmp")) std::printf("Captura guardada en render.bmp\n");
+                if (fb.savePNG("render.png")) std::printf("Captura guardada en render.png\n");
             }
         }
 
@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
             std::fflush(stdout);
             firstFrame = false;
             if (screenshotAndExit) {
-                fb.saveBMP("render.bmp");
+                if (fb.savePNG("render.png")) std::printf("Captura guardada en render.png\n");
                 running = false;
             }
         }

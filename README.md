@@ -33,9 +33,18 @@ Requiere CMake, un compilador C++17 y SDL2 (por ejemplo con MSYS2 UCRT64:
 ```sh
 cmake -S . -B build -G Ninja
 cmake --build build
-cd build
-./render_obj            # abre la ventana
-./render_obj --screenshot   # guarda render.bmp y termina
+./build/render_obj                # abre la ventana
+./build/render_obj --screenshot   # guarda render.png y termina
 ```
 
-Dentro de la ventana: `P` guarda una captura en `render.bmp`, `Esc` cierra.
+Ejecutado desde la raíz del repositorio, el programa lee `NaveEspacial.obj`
+y escribe `render.png` en esa misma carpeta. Dentro de la ventana: `P` guarda
+una captura en `render.png`, `Esc` cierra.
+
+## Imagen exportada
+
+`render.png` es el contenido real del framebuffer, escrito por
+`Framebuffer::savePNG` ([src/framebuffer.cpp](src/framebuffer.cpp)). Es un PNG
+RGB de 8 bits que el propio programa genera sin bibliotecas externas: guarda
+los píxeles en bloques deflate sin compresión, con sus checksums CRC-32 y
+Adler-32. Por eso el archivo pesa ~1.4 MB.
