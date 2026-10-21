@@ -14,9 +14,13 @@ propia para rellenar triángulos.
    los índices de sus vértices y con ellos obtiene los tres vértices de cada
    triángulo. Las caras de 4 vértices se dividen en dos triángulos
    (`0,1,2` y `0,2,3`).
-3. Cada vértice se transforma a coordenadas de pantalla (vista superior,
-   centrado y escalado para ocupar el 80% de la ventana).
-4. `triangle` ([src/triangle.cpp](src/triangle.cpp)) rellena el triángulo en el
+3. Cada vértice se rota (40° alrededor del eje vertical y 30° de inclinación)
+   para ver la nave en diagonal, y luego se proyecta de forma ortográfica a la
+   pantalla, centrado y escalado para ocupar el 80% de la ventana.
+4. Cada triángulo se sombrea según el ángulo entre su normal y una luz, y se
+   dibujan del más lejano al más cercano (algoritmo del pintor) para que las
+   caras de enfrente queden encima.
+5. `triangle` ([src/triangle.cpp](src/triangle.cpp)) rellena el triángulo en el
    framebuffer usando funciones de arista sobre su caja envolvente.
 
 El modelo tiene 136 vértices y 132 caras, que resultan en 264 triángulos.

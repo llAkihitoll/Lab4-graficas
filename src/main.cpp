@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -14,35 +15,70 @@ const int SCREEN_HEIGHT = 600;
 std::vector<Vec3> vertices;
 std::vector<Face> faces;
 
-// Transformacion modelo -> pantalla (vista superior, plano X-Z).
-float centerX, centerZ, scale;
+// Angulos de la camara en grados: giro alrededor del eje vertical (Y) y
+// inclinacion hacia abajo (eje X). Juntos dan una vista en diagonal.
+const float YAW_DEG = -40.0f;
+const float PITCH_DEG = 30.0f;
 
-// Calcula el centro de la caja envolvente y una escala uniforme para que
-// el modelo ocupe el 80% del lado mas restrictivo de la pantalla.
-void computeTransform() {
-    float minX = vertices[0].x, maxX = vertices[0].x;
-    float minZ = vertices[0].z, maxZ = vertices[0].z;
-    for (const Vec3& v : vertices) {
-        minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
-        minZ = std::min(minZ, v.z); maxZ = std::max(maxZ, v.z);
-    }
-    centerX = (minX + maxX) / 2.0f;
-    centerZ = (minZ + maxZ) / 2.0f;
-    scale = 0.8f * std::min(SCREEN_WIDTH / (maxX - minX), SCREEN_HEIGHT / (maxZ - minZ));
+// Vertices ya rotados: x hacia la derecha, y hacia arriba, z hacia la camara.
+std::vector<Vec3> rotated;
+
+// Transformacion modelo -> pantalla.
+float centerX, centerY, scale;
+
+Vec3 rotate(const Vec3& v) {
+    const float yaw = YAW_DEG * 3.14159265f / 180.0f;
+    const float pitch = PITCH_DEG * 3.14159265f / 180.0f;
+
+    // Giro alrededor de Y.
+    float x1 = v.x * std::cos(yaw) + v.z * std::sin(yaw);
+    float z1 = -v.x * std::sin(yaw) + v.z * std::cos(yaw);
+
+    // Inclinacion alrededor de X: la camara mira el modelo desde arriba.
+    float y2 = v.y * std::cos(pitch) - z1 * std::sin(pitch);
+    float z2 = v.y * std::sin(pitch) + z1 * std::cos(pitch);
+    return Vec3{x1, y2, z2};
 }
 
-// Proyeccion ortografica vista desde arriba: se descarta Y (altura).
-// Blender exporta con Y hacia arriba y -Z hacia adelante, asi que en la
-// vista superior Z crece hacia abajo de la pantalla, igual que y_pantalla.
+// Rota todos los vertices y calcula el centro de la caja envolvente y una
+// escala uniforme para que el modelo ocupe el 80% del lado mas restrictivo.
+void computeTransform() {
+    rotated.clear();
+    for (const Vec3& v : vertices) rotated.push_back(rotate(v));
+
+    float minX = rotated[0].x, maxX = rotated[0].x;
+    float minY = rotated[0].y, maxY = rotated[0].y;
+    for (const Vec3& v : rotated) {
+        minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
+        minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
+    }
+    centerX = (minX + maxX) / 2.0f;
+    centerY = (minY + maxY) / 2.0f;
+    scale = 0.8f * std::min(SCREEN_WIDTH / (maxX - minX), SCREEN_HEIGHT / (maxY - minY));
+}
+
+// Proyeccion ortografica de un vertice rotado: se descarta z. En pantalla
+// la y crece hacia abajo, por eso se invierte.
 Point toScreen(const Vec3& v) {
     int x = (int)(SCREEN_WIDTH / 2.0f + (v.x - centerX) * scale);
-    int y = (int)(SCREEN_HEIGHT / 2.0f + (v.z - centerZ) * scale);
+    int y = (int)(SCREEN_HEIGHT / 2.0f - (v.y - centerY) * scale);
     return Point{x, y};
 }
 
+struct Tri {
+    int i0, i1, i2;
+    float depth;      // z promedio; mayor z = mas cerca de la camara
+    float intensity;  // brillo segun la orientacion de la cara
+};
+
 // Recorre todas las caras y dibuja sus triangulos. Devuelve cuantos dibujo.
-int render(Framebuffer& fb) {
-    int drawn = 0;
+int render(Framebuffer& fb, Color baseColor) {
+    // Luz que viene desde arriba, la izquierda y la camara.
+    Vec3 light{-0.4f, 0.7f, 0.6f};
+    float len = std::sqrt(light.x * light.x + light.y * light.y + light.z * light.z);
+    light = Vec3{light.x / len, light.y / len, light.z / len};
+
+    std::vector<Tri> tris;
     for (const Face& face : faces) {
         const std::vector<int>& idx = face.vertexIndices;
 
@@ -58,15 +94,32 @@ int render(Framebuffer& fb) {
                 continue;
             }
 
-            const Vec3& v0 = vertices[i0];
-            const Vec3& v1 = vertices[i1];
-            const Vec3& v2 = vertices[i2];
+            const Vec3& v0 = rotated[i0];
+            const Vec3& v1 = rotated[i1];
+            const Vec3& v2 = rotated[i2];
 
-            triangle(fb, toScreen(v0), toScreen(v1), toScreen(v2));
-            ++drawn;
+            // Normal de la cara = (v1 - v0) x (v2 - v0).
+            Vec3 a{v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+            Vec3 b{v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+            Vec3 n{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+            float nlen = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+            float d = nlen > 0 ? std::fabs(n.x * light.x + n.y * light.y + n.z * light.z) / nlen : 0;
+
+            tris.push_back(Tri{i0, i1, i2, (v0.z + v1.z + v2.z) / 3.0f, 0.25f + 0.75f * d});
         }
     }
-    return drawn;
+
+    // Algoritmo del pintor: primero los triangulos mas lejanos, para que
+    // los cercanos queden encima.
+    std::sort(tris.begin(), tris.end(), [](const Tri& p, const Tri& q) { return p.depth < q.depth; });
+
+    for (const Tri& t : tris) {
+        fb.setColor(Color{(uint8_t)(baseColor.r * t.intensity),
+                          (uint8_t)(baseColor.g * t.intensity),
+                          (uint8_t)(baseColor.b * t.intensity)});
+        triangle(fb, toScreen(rotated[t.i0]), toScreen(rotated[t.i1]), toScreen(rotated[t.i2]));
+    }
+    return (int)tris.size();
 }
 
 int main(int argc, char* argv[]) {
@@ -118,8 +171,7 @@ int main(int argc, char* argv[]) {
         }
 
         fb.clear();
-        fb.setColor(Color{255, 255, 0});
-        int drawn = render(fb);
+        int drawn = render(fb, Color{255, 255, 0});
         fb.renderBuffer(renderer, texture);
 
         if (firstFrame) {
